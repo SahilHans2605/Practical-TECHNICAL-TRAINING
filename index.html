@@ -1,0 +1,238 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Q2 Dashboard</title>
+
+  <script src="https://unpkg.com/react@18/umd/react.development.js"></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+  <style>
+    body {
+      font-family: Arial;
+      margin: 30px;
+    }
+
+    .card {
+      max-width: 400px;
+      margin: auto;
+    }
+
+    input, button {
+      padding: 8px;
+      margin: 5px 0;
+    }
+
+    form, .stack {
+      display: flex;
+      flex-direction: column;
+    }
+
+    .note {
+      padding: 8px;
+      border: 1px solid gray;
+      margin: 5px 0;
+    }
+
+    .error {
+      color: red;
+    }
+
+    .row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+  </style>
+</head>
+
+<body>
+  <div id="root"></div>
+
+  <script type="text/babel">
+    const { useEffect, useState } = React;
+
+    async function api(path, options = {}) {
+      const token = localStorage.getItem("token");
+
+      const res = await fetch(path, {
+        ...options,
+        headers: {
+          "Content-Type": "application/json",
+          ...(token ? { Authorization: "Bearer " + token } : {}),
+          ...(options.headers || {}),
+        },
+      });
+
+      const data = await res.json().catch(() => ({}));
+
+      if (res.status === 401)
+        localStorage.removeItem("token");
+
+      if (!res.ok)
+        throw new Error(data.message || "Request failed");
+
+      return data;
+    }
+
+    function App() {
+      const [mode, setMode] = useState("login");
+      const [form, setForm] = useState({
+        name: "", email: "", password: ""
+      });
+      const [user, setUser] = useState(null);
+      const [notes, setNotes] = useState([]);
+      const [text, setText] = useState("");
+      const [error, setError] = useState("");
+
+      async function load() {
+        const data = await api("/api/dashboard");
+        setUser(data.user);
+        setNotes(data.notes);
+      }
+
+      useEffect(() => {
+        if (localStorage.getItem("token"))
+          load().catch(() => setUser(null));
+      }, []);
+
+      async function submit(e) {
+        e.preventDefault();
+        setError("");
+
+        try {
+          const data = await api(
+            mode === "login" ? "/api/login" : "/api/register",
+            {
+              method: "POST",
+              body: JSON.stringify(form),
+            }
+          );
+
+          localStorage.setItem("token", data.token);
+          await load();
+
+        } catch (err) {
+          setError(err.message);
+        }
+      }
+
+      async function addNote(e) {
+        e.preventDefault();
+
+        if (!text.trim()) return;
+
+        await api("/api/notes", {
+          method: "POST",
+          body: JSON.stringify({ text }),
+        });
+
+        setText("");
+        await load();
+      }
+
+      function logout() {
+        localStorage.removeItem("token");
+        setUser(null);
+        setNotes([]);
+        setMode("login");
+        setForm({ name: "", email: "", password: "" });
+      }
+
+      if (!user) {
+        return (
+          <div className="card">
+            <h1>{mode === "login" ? "Login" : "Register"}</h1>
+
+            <p>JWT protected dashboard</p>
+
+            <form onSubmit={submit}>
+              {mode === "register" && (
+                <input
+                  placeholder="Name"
+                  value={form.name}
+                  onChange={e => setForm({
+                    ...form, name: e.target.value
+                  })}
+                />
+              )}
+
+              <input
+                placeholder="Email"
+                value={form.email}
+                onChange={e => setForm({
+                  ...form, email: e.target.value
+                })}
+              />
+
+              <input
+                placeholder="Password"
+                type="password"
+                value={form.password}
+                onChange={e => setForm({
+                  ...form, password: e.target.value
+                })}
+              />
+
+              <button>
+                {mode === "login" ? "Login" : "Create account"}
+              </button>
+            </form>
+
+            <p className="error">{error}</p>
+
+            <button onClick={() => {
+              setMode(mode === "login" ? "register" : "login");
+              setError("");
+            }}>
+              {mode === "login"
+                ? "Need an account? Register"
+                : "Have an account? Login"}
+            </button>
+          </div>
+        );
+      }
+
+      return (
+        <div className="card">
+          <div className="row">
+            <div>
+              <h1>Dashboard</h1>
+              <p>{user.name} · {user.email}</p>
+            </div>
+
+            <button onClick={logout}>Logout</button>
+          </div>
+
+          <form onSubmit={addNote}>
+            <input
+              placeholder="Add a note"
+              value={text}
+              onChange={e => setText(e.target.value)}
+            />
+
+            <button>Save to database</button>
+          </form>
+
+          <div className="stack">
+            {notes.length === 0 && <p>No notes yet.</p>}
+
+            {notes.map(note => (
+              <div className="note" key={note._id}>
+                {note.text}
+              </div>
+            ))}
+          </div>
+        </div>
+      );
+    }
+
+    ReactDOM.createRoot(
+      document.getElementById("root")
+    ).render(<App />);
+  </script>
+</body>
+</html>
